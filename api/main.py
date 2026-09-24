@@ -1,3 +1,4 @@
+import os
 from typing import List, Annotated
 
 from fastapi import (
@@ -34,13 +35,29 @@ MAX_RESUME_UPLOADS = 20
 
 
 # ============================================================
+# Environment
+# ============================================================
+
+ENVIRONMENT = os.getenv(
+    "ENVIRONMENT",
+    "development"
+).lower()
+
+IS_PRODUCTION = ENVIRONMENT == "production"
+
+
+# ============================================================
 # FastAPI Application
 # ============================================================
 
 app = FastAPI(
     title="AI Career Intelligence Platform API",
     description="Resume Screening API powered by ML + LLM",
-    version="1.0.0"
+    version="1.0.0",
+     # Hide docs in production, keep in development
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
 
 # ============================================================

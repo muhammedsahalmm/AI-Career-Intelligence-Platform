@@ -69,8 +69,30 @@ def analyze_resume(
             f"duration={elapsed_time:.2f}s"
         )
 
+        # Return a full ResumeResult shape so that
+        # api/main.py's response_model=ResumeResponse
+        # validation does not fail with HTTP 500.
         return {
-            "status": "Text Extraction Failed"
+
+            "file_name": file_name,
+
+            "primary_role": "ERROR",
+            "primary_confidence": 0.0,
+
+            "secondary_role": "ERROR",
+            "secondary_confidence": 0.0,
+
+            "semantic_jd_match_score": 0.0,
+
+            "matched_keywords": [],
+
+            "missing_keywords": [],
+
+            "ai_feedback": (
+                "Could not extract text from the PDF. "
+                "It may be a scanned image or empty "
+                "document."
+            )
         }
 
     # ========================================================
