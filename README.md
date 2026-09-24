@@ -109,8 +109,3 @@ AI-Career-Intelligence-Platform/
 pytest tests/ -v
 ```
 
----
-
-## License
-
-MIT
