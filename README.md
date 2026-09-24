@@ -2,7 +2,7 @@
 
 An AI-powered resume screening platform that predicts job roles, calculates semantic JD matching, and generates recruiter-style feedback using Google Gemini.
 
-Built as an MSc Computer Science portfolio project demonstrating end-to-end ML + LLM + full-stack engineering.
+Built as a project demonstrating end-to-end ML + LLM + full-stack engineering.
 
 ---
 
