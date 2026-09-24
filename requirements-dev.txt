@@ -1,0 +1,10 @@
+-r requirements.txt
+
+jupyter
+notebook
+ipykernel
+ipywidgets
+
+black
+flake8
+pytest

@@ -1,0 +1,31 @@
+services:
+
+  fastapi:
+    volumes:
+      - ./api:/app/api
+      - ./modules:/app/modules
+      - ./services:/app/services
+      - ./schemas:/app/schemas
+      - ./prompts:/app/prompts
+    command: >
+      uvicorn api.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+
+  streamlit:
+    volumes:
+      - ./app.py:/app/app.py
+      - ./modules:/app/modules
+      - ./services:/app/services
+      - ./schemas:/app/schemas
+      - ./prompts:/app/prompts
+      - ./.streamlit:/app/.streamlit
+    command: >
+      streamlit run app.py
+      --server.address=0.0.0.0
+      --server.port=8501
+      --server.headless=true
+      --server.fileWatcherType=poll
+      --server.runOnSave=true
+      --browser.gatherUsageStats=false
