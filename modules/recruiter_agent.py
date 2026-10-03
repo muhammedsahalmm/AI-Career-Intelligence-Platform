@@ -20,6 +20,50 @@ client = genai.Client(api_key=API_KEY)
 
 
 # ============================================================
+# Retry Configuration
+# ============================================================
+
+MAX_RETRY_ATTEMPTS = 3
+INITIAL_BACKOFF_SECONDS = 2
+
+
+# ============================================================
+# Transient Error Detection
+# ============================================================
+
+def is_transient_error(error_message):
+    """
+    Decide whether a Gemini error is worth retrying.
+
+    Transient (retry):
+        - 503 UNAVAILABLE
+        - high demand
+        - timeout
+        - network
+
+    Permanent (do not retry):
+        - quota exceeded
+        - permission
+        - api key
+    """
+
+    error = error_message.lower()
+
+    transient_keywords = [
+        "503",
+        "unavailable",
+        "high demand",
+        "timeout",
+        "network",
+    ]
+
+    return any(
+        keyword in error
+        for keyword in transient_keywords
+    )
+
+
+# ============================================================
 # Load Prompt Template
 # ============================================================
 
@@ -36,6 +80,82 @@ def load_prompt():
     ) as file:
 
         return file.read()
+
+
+# ============================================================
+# Friendly Error Message Builder
+# ============================================================
+
+def build_error_message(error_message):
+    """
+    Convert a Gemini error into a user-friendly message.
+    """
+
+    error = error_message.lower()
+
+    # --------------------------------------------------------
+    # Quota Error
+    # --------------------------------------------------------
+
+    if "quota" in error:
+
+        return (
+            "❌ Gemini API quota exceeded.\n\n"
+            "Please try again later."
+        )
+
+    # --------------------------------------------------------
+    # Permission / Authentication Error
+    # --------------------------------------------------------
+
+    elif "permission" in error:
+
+        return (
+            "❌ Invalid Gemini API Key."
+        )
+
+    # --------------------------------------------------------
+    # Missing API Key
+    # --------------------------------------------------------
+
+    elif "api key" in error:
+
+        return (
+            "❌ Gemini API Key is missing."
+        )
+
+    # --------------------------------------------------------
+    # Timeout Error
+    # --------------------------------------------------------
+
+    elif "timeout" in error:
+
+        return (
+            "❌ Request timed out.\n"
+            "Please try again."
+        )
+
+    # --------------------------------------------------------
+    # Network Error
+    # --------------------------------------------------------
+
+    elif "network" in error:
+
+        return (
+            "❌ Network connection error."
+        )
+
+    # --------------------------------------------------------
+    # Unknown Error
+    # --------------------------------------------------------
+
+    else:
+
+        return (
+            "❌ Unable to generate AI recruiter "
+            "feedback.\n"
+            "Please try again later."
+        )
 
 
 # ============================================================
@@ -57,6 +177,13 @@ def generate_recruiter_feedback(
 
     Gemini is called ONLY when the user explicitly
     requests AI recruiter feedback.
+
+    Transient Gemini errors (503, high demand, timeout,
+    network) are retried automatically up to
+    MAX_RETRY_ATTEMPTS times with exponential backoff.
+
+    Permanent errors (quota, permission, api key) fail
+    immediately without retry.
     """
 
     # --------------------------------------------------------
@@ -102,129 +229,102 @@ def generate_recruiter_feedback(
     start_time = time.perf_counter()
 
     # ========================================================
-    # Gemini API Request
+    # Retry Loop
     # ========================================================
 
-    try:
+    last_error = None
 
-        response = client.models.generate_content(
+    for attempt in range(
+        1,
+        MAX_RETRY_ATTEMPTS + 1
+    ):
 
-            model="gemini-2.5-flash",
+        try:
 
-            contents=prompt
+            response = client.models.generate_content(
 
-        )
+                model="gemini-2.5-flash",
 
-        # ----------------------------------------------------
-        # Calculate Gemini Response Time
-        # ----------------------------------------------------
+                contents=prompt
 
-        elapsed_time = (
-            time.perf_counter()
-            - start_time
-        )
+            )
 
-        # ----------------------------------------------------
-        # Success Logging
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # Calculate Gemini Response Time
+            # ------------------------------------------------
 
-        logger.info(
-            f"AI feedback generated successfully "
-            f"for {file_name} | "
-            f"Gemini response time: "
-            f"{elapsed_time:.2f}s"
-        )
+            elapsed_time = (
+                time.perf_counter()
+                - start_time
+            )
 
-        return response.text
+            # ------------------------------------------------
+            # Success Logging
+            # ------------------------------------------------
+
+            logger.info(
+                f"AI feedback generated successfully "
+                f"for {file_name} | "
+                f"attempt={attempt}/{MAX_RETRY_ATTEMPTS} | "
+                f"Gemini response time: "
+                f"{elapsed_time:.2f}s"
+            )
+
+            return response.text
+
+        except Exception as e:
+
+            last_error = str(e)
+
+            # ------------------------------------------------
+            # Decide Whether To Retry
+            # ------------------------------------------------
+
+            can_retry = (
+                is_transient_error(last_error)
+                and attempt < MAX_RETRY_ATTEMPTS
+            )
+
+            if can_retry:
+
+                backoff = (
+                    INITIAL_BACKOFF_SECONDS
+                    * attempt
+                )
+
+                logger.warning(
+                    f"Gemini transient error for "
+                    f"{file_name} | "
+                    f"attempt={attempt}/{MAX_RETRY_ATTEMPTS} | "
+                    f"retrying in {backoff}s | "
+                    f"Error: {last_error}"
+                )
+
+                time.sleep(backoff)
+
+                continue
+
+            # ------------------------------------------------
+            # No Retry — Log Final Failure
+            # ------------------------------------------------
+
+            elapsed_time = (
+                time.perf_counter()
+                - start_time
+            )
+
+            logger.error(
+                f"Gemini Error for {file_name} | "
+                f"attempt={attempt}/{MAX_RETRY_ATTEMPTS} | "
+                f"Response time: "
+                f"{elapsed_time:.2f}s | "
+                f"Error: {last_error}"
+            )
+
+            break
 
     # ========================================================
-    # Gemini Error Handling
+    # All Attempts Exhausted
     # ========================================================
 
-    except Exception as e:
-
-        # ----------------------------------------------------
-        # Calculate Failed Request Time
-        # ----------------------------------------------------
-
-        elapsed_time = (
-            time.perf_counter()
-            - start_time
-        )
-
-        # ----------------------------------------------------
-        # Error Logging
-        # ----------------------------------------------------
-
-        logger.error(
-            f"Gemini Error for {file_name} | "
-            f"Response time: "
-            f"{elapsed_time:.2f}s | "
-            f"Error: {str(e)}"
-        )
-
-        error = str(e).lower()
-
-        # ----------------------------------------------------
-        # Quota Error
-        # ----------------------------------------------------
-
-        if "quota" in error:
-
-            return (
-                "❌ Gemini API quota exceeded.\n\n"
-                "Please try again later."
-            )
-
-        # ----------------------------------------------------
-        # Permission / Authentication Error
-        # ----------------------------------------------------
-
-        elif "permission" in error:
-
-            return (
-                "❌ Invalid Gemini API Key."
-            )
-
-        # ----------------------------------------------------
-        # Missing API Key
-        # ----------------------------------------------------
-
-        elif "api key" in error:
-
-            return (
-                "❌ Gemini API Key is missing."
-            )
-
-        # ----------------------------------------------------
-        # Timeout Error
-        # ----------------------------------------------------
-
-        elif "timeout" in error:
-
-            return (
-                "❌ Request timed out.\n"
-                "Please try again."
-            )
-
-        # ----------------------------------------------------
-        # Network Error
-        # ----------------------------------------------------
-
-        elif "network" in error:
-
-            return (
-                "❌ Network connection error."
-            )
-
-        # ----------------------------------------------------
-        # Unknown Error
-        # ----------------------------------------------------
-
-        else:
-
-            return (
-                "❌ Unable to generate AI recruiter "
-                "feedback.\n"
-                "Please try again later."
-            )
+    return build_error_message(last_error)
